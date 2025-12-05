@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"service-3-gateway/internal/response"
+	"github.com/thatlq1812/service-3-gateway/internal/response"
 
 	articlepb "github.com/thatlq1812/service-2-article/proto"
 

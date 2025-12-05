@@ -1,17 +1,11 @@
-module service-3-gateway
+module github.com/thatlq1812/service-3-gateway
 
 go 1.25.4
 
-replace github.com/thatlq1812/service-1-user => ../service-1-user
-
-replace github.com/thatlq1812/service-2-article => ../service-2-article
-
-replace agrios => ..
-
 require (
 	github.com/gorilla/mux v1.8.1
-	github.com/thatlq1812/service-1-user v1.2.3
-	github.com/thatlq1812/service-2-article v1.2.3
+	github.com/thatlq1812/service-1-user v1.3.0
+	github.com/thatlq1812/service-2-article v1.3.0
 	google.golang.org/grpc v1.77.0
 )
 

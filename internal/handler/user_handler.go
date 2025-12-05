@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"service-3-gateway/internal/response"
+	"github.com/thatlq1812/service-3-gateway/internal/response"
 
 	userpb "github.com/thatlq1812/service-1-user/proto"
 
