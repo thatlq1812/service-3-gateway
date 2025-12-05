@@ -1,0 +1,155 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database for User Service
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: gateway-postgres-user
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agrios_users
+    ports:
+      - "5434:5432"  # Different external port
+    volumes:
+      - gateway_user_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gateway-network
+
+  # PostgreSQL Database for Article Service
+  postgres-article:
+    image: postgres:15-alpine
+    container_name: gateway-postgres-article
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agrios_articles
+    ports:
+      - "5435:5432"  # Different external port
+    volumes:
+      - gateway_article_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gateway-network
+
+  # Redis Cache (shared)
+  redis:
+    image: redis:7-alpine
+    container_name: gateway-redis
+    ports:
+      - "6381:6379"  # Different external port
+    networks:
+      - gateway-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # User Service (gRPC)
+  user-service:
+    image: thatlq1812/agrios-user-service:latest
+    container_name: gateway-user-service
+    environment:
+      - DB_HOST=postgres-user
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=agrios_users
+      - GRPC_PORT=50051
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+    ports:
+      - "50051:50051"
+    depends_on:
+      postgres-user:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gateway-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50051"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Article Service (gRPC)
+  article-service:
+    image: thatlq1812/agrios-article-service:latest
+    container_name: gateway-article-service
+    environment:
+      - DB_HOST=postgres-article
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=agrios_articles
+      - GRPC_PORT=50052
+      - USER_SERVICE_ADDR=user-service:50051
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+    ports:
+      - "50052:50052"
+    depends_on:
+      postgres-article:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - gateway-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50052"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API Gateway (REST API)
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gateway-app
+    environment:
+      - USER_SERVICE_ADDR=user-service:50051
+      - ARTICLE_SERVICE_ADDR=article-service:50052
+      - GATEWAY_PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      user-service:
+        condition: service_started
+      article-service:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - gateway-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  gateway_user_postgres_data:
+    driver: local
+  gateway_article_postgres_data:
+    driver: local
+
+networks:
+  gateway-network:
+    driver: bridge

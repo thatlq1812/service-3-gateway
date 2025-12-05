@@ -49,41 +49,121 @@ API Gateway provides HTTP REST interface for external clients, translating reque
 **Prerequisites:**
 - Docker 20.10+
 - Docker Compose 1.29+
+- Git
 
-**Quick Start:**
+---
+
+#### Option 1A: Run from Project Root (All Services)
+
+Run complete platform with all services.
+
 ```bash
-# From project root
+# 1. Clone repository
+git clone https://github.com/thatlq1812/agrios.git
 cd agrios
 
-# Start all services (includes Gateway)
+# 2. Start all services
+# This will start:
+#   - PostgreSQL (port 5432)
+#   - Redis (port 6379)
+#   - User Service (port 50051)
+#   - Article Service (port 50052)
+#   - Gateway (port 8080)
 docker-compose up -d
 
-# Wait for services
+# 3. Wait for initialization
 sleep 15
 
-# Verify gateway
+# 4. Check service status
+docker-compose ps
+
+# Expected: All services Up (healthy)
+
+# 5. Verify Gateway
 curl http://localhost:8080/health
+
 # Expected: {"status":"ok"}
+
+# 6. View Gateway logs
+docker logs agrios-gateway --tail 20
 ```
 
-**Gateway Docker Details:**
-```yaml
-# From docker-compose.yml
-gateway:
-  build: ./service-3-gateway
-  ports:
-    - "8080:8080"
-  depends_on:
-    - user-service
-    - article-service
-  environment:
-    - USER_SERVICE_HOST=user-service
-    - ARTICLE_SERVICE_HOST=article-service
-```
+---
 
-**Rebuild after code changes:**
+#### Option 1B: Run Gateway Only (Standalone)
+
+Run Gateway with all backend services.
+
+**Note:** Gateway needs both User Service and Article Service to function.
+
 ```bash
+# 1. Clone repository
+git clone https://github.com/thatlq1812/agrios.git
+cd agrios/service-3-gateway
+
+# 2. Configure environment (optional)
+cp .env.example .env
+
+# 3. Start Gateway with all dependencies
+# This will start:
+#   - PostgreSQL for users (port 5434)
+#   - PostgreSQL for articles (port 5435)
+#   - Redis (port 6381)
+#   - User Service (port 50051)
+#   - Article Service (port 50052)
+#   - Gateway (port 8080)
+docker-compose up -d
+
+# 4. Wait for initialization
+sleep 20
+
+# 5. Check service status
+docker-compose ps
+
+# Expected output:
+# gateway-postgres-user     Up (healthy)
+# gateway-postgres-article  Up (healthy)
+# gateway-redis             Up (healthy)
+# gateway-user-service      Up (healthy)
+# gateway-article-service   Up (healthy)
+# gateway-app               Up (healthy)
+
+# 6. Verify Gateway
+curl http://localhost:8080/health
+
+# Expected: {"status":"ok"}
+
+# 7. View logs
+docker logs gateway-app --tail 20
+```
+
+**Important Notes:**
+- **All backend services included** - User Service + Article Service run automatically
+- **PostgreSQL & Redis started automatically** - no manual installation needed
+- Different ports used (5434, 5435, 6381) to avoid conflicts with root setup
+- Database tables created automatically from migrations
+- Gateway ready at http://localhost:8080
+
+**Common Commands:**
+
+```bash
+# Rebuild after code changes (from root)
+cd agrios
 docker-compose up -d --build gateway
+
+# Rebuild standalone (from service-3-gateway)
+cd agrios/service-3-gateway
+docker-compose up -d --build gateway
+
+# Stop services
+docker-compose down
+
+# Remove volumes and clean data
+docker-compose down -v
+
+# Test API
+curl http://localhost:8080/health
+curl http://localhost:8080/api/v1/users
 ```
 
 ---
