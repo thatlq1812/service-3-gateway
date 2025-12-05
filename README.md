@@ -27,48 +27,81 @@
 
 ## Quick Start
 
-**For new users cloning the project, choose one:**
+**⚠️ Service-3 requires Service-1 and Service-2 running first.**
 
-### Quick Start 1: Run All Services (Recommended)
+### Standalone Mode (This Service Only)
+
 ```bash
-# Clone and setup
-git clone https://github.com/thatlq1812/service-3-gateway.git
-cd agrios
-
-# Start all services (User + Article + Gateway)
+# PREREQUISITE 1: Start Service-1 first
+cd service-1-user
 docker-compose up -d
-sleep 20
+sleep 15
 
-# Verify Gateway
-curl http://localhost:8080/health
+# PREREQUISITE 2: Start Service-2
+cd ../service-2-article
+docker-compose up -d
+sleep 10
 
-# Test API
-curl http://localhost:8080/api/v1/users
-```
-
-### Quick Start 2: Run Gateway Only (Standalone)
-```bash
-# Clone and setup
+# Then start Service-3 (Gateway)
+cd ../service-3-gateway
 git clone https://github.com/thatlq1812/service-3-gateway.git
 cd service-3-gateway
 
 # Configure (optional - defaults work fine)
 cp .env.example .env
 
-# Start Gateway with all dependencies
-# Note: This includes User Service + Article Service
+# Build and start (Gateway only, no database)
+docker-compose build --no-cache
 docker-compose up -d
-sleep 20
 
-# Verify Gateway
+# Wait for healthy status
+sleep 5
+
+# Verify
+docker ps
 curl http://localhost:8080/health
 
 # Test API
 curl http://localhost:8080/api/v1/users
 ```
 
-**Gateway will be running at http://localhost:8080**  
-**User Service at port 50051, Article Service at port 50052**
+**Exposed Ports:**
+- `8080` - HTTP REST API Gateway
+
+**External Dependencies (via host.docker.internal):**
+- `host.docker.internal:50051` - User Service (required)
+- `host.docker.internal:50052` - Article Service (required)
+
+### Multi-Service Sequential Startup (Complete Platform)
+
+**Order:** Service-1 → Service-2 → Service-3
+
+```bash
+# Step 1: Start User Service (Foundation)
+cd service-1-user
+docker-compose up -d
+sleep 15
+
+# Step 2: Start Article Service
+cd ../service-2-article
+docker-compose up -d
+sleep 10
+
+# Step 3: Start Gateway (this service)
+cd ../service-3-gateway
+docker-compose up -d
+sleep 5
+
+# Verify all services
+docker ps
+curl http://localhost:8080/health
+```
+
+**Important Notes:**
+- Gateway is pure HTTP/gRPC proxy (no database)
+- Requires both backend services healthy before starting
+- All API requests translate to gRPC calls to Service-1 or Service-2
+- If backend services restart, Gateway automatically reconnects
 
 See [Setup Options](#setup-options) for detailed instructions.
 
