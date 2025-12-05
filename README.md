@@ -4,12 +4,15 @@
 
 **Protocol:** HTTP REST  
 **Port:** 8080  
-**Backend:** gRPC clients to User & Article Services
+**Backend:** gRPC clients to User & Article Services  
+**Dependencies:** User Service + Article Service
 
 ---
 
 ## Table of Contents
 
+- [Quick Start](#quick-start)
+- [Prerequisites](#prerequisites)
 - [Overview](#overview)
 - [Setup Options](#setup-options)
   - [Option 1: Docker](#option-1-docker-recommended)
@@ -19,6 +22,93 @@
 - [Response Format](#response-format)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## Quick Start
+
+**For new users cloning the project, choose one:**
+
+### Quick Start 1: Run All Services (Recommended)
+```bash
+# Clone and setup
+git clone https://github.com/thatlq1812/service-3-gateway.git
+cd agrios
+
+# Start all services (User + Article + Gateway)
+docker-compose up -d
+sleep 20
+
+# Verify Gateway
+curl http://localhost:8080/health
+
+# Test API
+curl http://localhost:8080/api/v1/users
+```
+
+### Quick Start 2: Run Gateway Only (Standalone)
+```bash
+# Clone and setup
+git clone https://github.com/thatlq1812/service-3-gateway.git
+cd service-3-gateway
+
+# Configure (optional - defaults work fine)
+cp .env.example .env
+
+# Start Gateway with all dependencies
+# Note: This includes User Service + Article Service
+docker-compose up -d
+sleep 20
+
+# Verify Gateway
+curl http://localhost:8080/health
+
+# Test API
+curl http://localhost:8080/api/v1/users
+```
+
+**Gateway will be running at http://localhost:8080**  
+**User Service at port 50051, Article Service at port 50052**
+
+See [Setup Options](#setup-options) for detailed instructions.
+
+---
+
+## Prerequisites
+
+### For Docker Setup (Recommended)
+
+- **Docker** 20.10+ and **Docker Compose** 1.29+
+- **Git** for cloning the repository
+- 2GB RAM minimum
+- Ports 8080, 50051, 50052 available
+
+### For Local Development
+
+- **Go** 1.21 or higher
+- **curl** for testing HTTP endpoints
+- Backend services running:
+  - User Service (port 50051)
+  - Article Service (port 50052)
+
+### Install curl
+
+**Windows (PowerShell):**
+```powershell
+# curl comes pre-installed with Windows 10+
+curl --version
+```
+
+**Linux:**
+```bash
+sudo apt-get install curl
+```
+
+**macOS:**
+```bash
+# curl comes pre-installed
+curl --version
+```
 
 ---
 
@@ -98,8 +188,8 @@ Run Gateway with all backend services.
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/thatlq1812/agrios.git
-cd agrios/service-3-gateway
+git clone https://github.com/thatlq1812/service-3-gateway.git
+cd service-3-gateway
 
 # 2. Configure environment (optional)
 cp .env.example .env
@@ -152,7 +242,7 @@ cd agrios
 docker-compose up -d --build gateway
 
 # Rebuild standalone (from service-3-gateway)
-cd agrios/service-3-gateway
+cd service-3-gateway
 docker-compose up -d --build gateway
 
 # Stop services
@@ -834,6 +924,34 @@ chmod +x test-gateway.sh
 
 ## Troubleshooting
 
+### curl not found
+
+**Problem:** `curl: command not found` when testing APIs
+
+**Solution:**
+
+**Windows:**
+```powershell
+# curl is built-in on Windows 10+
+# If missing, download from https://curl.se/windows/
+
+# Alternative: Use PowerShell Invoke-WebRequest
+Invoke-WebRequest -Uri http://localhost:8080/health
+```
+
+**Linux:**
+```bash
+sudo apt-get install curl
+```
+
+**macOS:**
+```bash
+# curl is pre-installed
+# If missing: brew install curl
+```
+
+---
+
 ### Gateway Won't Start
 
 **Problem:** Service fails to start
@@ -913,6 +1031,61 @@ curl -I http://localhost:8080/api/v1/users \
 
 # Should see:
 # Access-Control-Allow-Origin: http://localhost:3000
+```
+
+---
+
+### Container Name Conflicts
+
+**Problem:** `container name already in use`
+
+**Cause:** Previous containers not removed
+
+**Solutions:**
+```bash
+# List all containers
+docker ps -a
+
+# Remove specific containers
+docker rm -f gateway-app
+docker rm -f gateway-user-service
+docker rm -f gateway-article-service
+docker rm -f gateway-postgres-user
+docker rm -f gateway-postgres-article
+docker rm -f gateway-redis
+
+# Or remove all stopped containers
+docker container prune
+
+# Then restart
+docker-compose up -d
+```
+
+---
+
+### Port Conflicts
+
+**Problem:** `port is already allocated`
+
+**Cause:** Another service using the same port
+
+**Solutions:**
+```bash
+# Check what's using the ports
+netstat -ano | findstr :8080    # Windows
+netstat -ano | findstr :50051
+netstat -ano | findstr :50052
+
+lsof -i :8080                   # Linux/Mac
+lsof -i :50051
+lsof -i :50052
+
+# Option 1: Stop conflicting service
+# Find PID and kill it
+
+# Option 2: Change ports in docker-compose.yml
+# Edit ports section:
+# - "8081:8080"  # Use 8081 instead of 8080
 ```
 
 ---
