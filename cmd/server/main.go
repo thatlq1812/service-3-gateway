@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +19,45 @@ import (
 	userpb "github.com/thatlq1812/service-1-user/proto"
 )
 
+// connectWithRetry attempts to establish gRPC connection with exponential backoff
+func connectWithRetry(address string, serviceName string, maxRetries int) (*grpc.ClientConn, error) {
+	backoff := 1 * time.Second
+	maxBackoff := 30 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		log.Printf("[%s] Connection attempt %d/%d to %s", serviceName, i+1, maxRetries, address)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		conn, err := grpc.DialContext(
+			ctx,
+			address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(), // Block until connected or timeout
+		)
+		cancel()
+
+		if err == nil {
+			log.Printf("[%s] ✓ Successfully connected to %s", serviceName, address)
+			return conn, nil
+		}
+
+		log.Printf("[%s] ✗ Connection attempt %d failed: %v", serviceName, i+1, err)
+
+		if i < maxRetries-1 {
+			log.Printf("[%s] Retrying in %v...", serviceName, backoff)
+			time.Sleep(backoff)
+
+			// Exponential backoff
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("failed to connect after %d retries", maxRetries)
+}
+
 func main() {
 	// Get service addresses from environment
 	userServiceAddr := getEnv("USER_SERVICE_ADDR", "localhost:50051")
@@ -27,29 +68,21 @@ func main() {
 	log.Printf("User Service: %s", userServiceAddr)
 	log.Printf("Article Service: %s", articleServiceAddr)
 
-	// Connect to User Service (gRPC)
+	// Connect to User Service (gRPC) with retry logic
 	log.Printf("Connecting to User Service...")
-	userConn, err := grpc.Dial(
-		userServiceAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithTimeout(5*time.Second),
-	)
+	userConn, err := connectWithRetry(userServiceAddr, "User Service", 5)
 	if err != nil {
-		log.Fatalf("Failed to connect to User Service: %v", err)
+		log.Fatalf("Failed to connect to User Service after retries: %v", err)
 	}
 	defer userConn.Close()
 	userClient := userpb.NewUserServiceClient(userConn)
 	log.Printf("✓ Connected to User Service")
 
-	// Connect to Article Service (gRPC)
+	// Connect to Article Service (gRPC) with retry logic
 	log.Printf("Connecting to Article Service...")
-	articleConn, err := grpc.Dial(
-		articleServiceAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithTimeout(5*time.Second),
-	)
+	articleConn, err := connectWithRetry(articleServiceAddr, "Article Service", 5)
 	if err != nil {
-		log.Fatalf("Failed to connect to Article Service: %v", err)
+		log.Fatalf("Failed to connect to Article Service after retries: %v", err)
 	}
 	defer articleConn.Close()
 	articleClient := articlepb.NewArticleServiceClient(articleConn)
@@ -95,11 +128,44 @@ func main() {
 	api.HandleFunc("/articles/{id}", articleHandler.UpdateArticle).Methods("PUT")
 	api.HandleFunc("/articles/{id}", articleHandler.DeleteArticle).Methods("DELETE")
 
-	// Health check
+	// Health check with backend service status
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"healthy"}`))
+		
+		// Check User Service connection
+		userState := userConn.GetState().String()
+		userHealthy := userState == "READY"
+		
+		// Check Article Service connection
+		articleState := articleConn.GetState().String()
+		articleHealthy := articleState == "READY"
+		
+		// Overall health
+		overallHealthy := userHealthy && articleHealthy
+		statusCode := http.StatusOK
+		status := "healthy"
+		
+		if !overallHealthy {
+			statusCode = http.StatusServiceUnavailable
+			status = "degraded"
+		}
+		
+		response := fmt.Sprintf(`{
+	"status": "%s",
+	"services": {
+		"user_service": {
+			"status": "%s",
+			"healthy": %v
+		},
+		"article_service": {
+			"status": "%s",
+			"healthy": %v
+		}
+	}
+}`, status, userState, userHealthy, articleState, articleHealthy)
+		
+		w.WriteHeader(statusCode)
+		w.Write([]byte(response))
 	}).Methods("GET")
 
 	// Start server
