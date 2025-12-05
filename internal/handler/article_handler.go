@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/thatlq1812/service-3-gateway/internal/circuit"
 	"github.com/thatlq1812/service-3-gateway/internal/response"
 
 	articlepb "github.com/thatlq1812/service-2-article/proto"
@@ -17,12 +18,21 @@ import (
 )
 
 type ArticleHandler struct {
-	articleClient articlepb.ArticleServiceClient
+	articleClient  articlepb.ArticleServiceClient
+	circuitBreaker *circuit.Breaker
 }
 
 func NewArticleHandler(articleClient articlepb.ArticleServiceClient) *ArticleHandler {
 	return &ArticleHandler{
-		articleClient: articleClient,
+		articleClient:  articleClient,
+		circuitBreaker: nil, // Backward compatibility
+	}
+}
+
+func NewArticleHandlerWithCircuit(articleClient articlepb.ArticleServiceClient, breaker *circuit.Breaker) *ArticleHandler {
+	return &ArticleHandler{
+		articleClient:  articleClient,
+		circuitBreaker: breaker,
 	}
 }
 

@@ -216,6 +216,17 @@ func NotFound(w http.ResponseWriter, message string) {
 	})
 }
 
+// ServiceUnavailable returns service unavailable error (code "14")
+// Used when circuit breaker is open or service is down
+func ServiceUnavailable(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	json.NewEncoder(w).Encode(APIResponse{
+		Code:    CodeUnavailable,
+		Message: message,
+	})
+}
+
 // InternalError returns internal error (code "13")
 func InternalError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")

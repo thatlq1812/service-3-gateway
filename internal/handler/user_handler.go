@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/thatlq1812/service-3-gateway/internal/circuit"
 	"github.com/thatlq1812/service-3-gateway/internal/response"
 
 	userpb "github.com/thatlq1812/service-1-user/proto"
@@ -14,12 +16,21 @@ import (
 )
 
 type UserHandler struct {
-	userClient userpb.UserServiceClient
+	userClient     userpb.UserServiceClient
+	circuitBreaker *circuit.Breaker
 }
 
 func NewUserHandler(userClient userpb.UserServiceClient) *UserHandler {
 	return &UserHandler{
-		userClient: userClient,
+		userClient:     userClient,
+		circuitBreaker: nil, // Backward compatibility
+	}
+}
+
+func NewUserHandlerWithCircuit(userClient userpb.UserServiceClient, breaker *circuit.Breaker) *UserHandler {
+	return &UserHandler{
+		userClient:     userClient,
+		circuitBreaker: breaker,
 	}
 }
 
@@ -39,12 +50,43 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Call gRPC User Service
-	resp, err := h.userClient.CreateUser(context.Background(), &userpb.CreateUserRequest{
-		Name:     req.Name,
-		Email:    req.Email,
-		Password: req.Password,
-	})
+	// Use request context with timeout from middleware
+	ctx := r.Context()
+
+	// If no context timeout from middleware, set default
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+	}
+
+	// Execute with circuit breaker protection
+	var resp *userpb.CreateUserResponse
+	var err error
+
+	if h.circuitBreaker != nil {
+		err = h.circuitBreaker.Execute(ctx, func(ctx context.Context) error {
+			resp, err = h.userClient.CreateUser(ctx, &userpb.CreateUserRequest{
+				Name:     req.Name,
+				Email:    req.Email,
+				Password: req.Password,
+			})
+			return err
+		})
+
+		// Circuit breaker is open
+		if err == circuit.ErrCircuitOpen {
+			response.ServiceUnavailable(w, "user service temporarily unavailable")
+			return
+		}
+	} else {
+		// Fallback: direct call without circuit breaker
+		resp, err = h.userClient.CreateUser(ctx, &userpb.CreateUserRequest{
+			Name:     req.Name,
+			Email:    req.Email,
+			Password: req.Password,
+		})
+	}
 
 	if err != nil {
 		response.Error(w, err)

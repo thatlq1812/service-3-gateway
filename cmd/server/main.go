@@ -12,7 +12,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/thatlq1812/service-3-gateway/internal/circuit"
 	"github.com/thatlq1812/service-3-gateway/internal/handler"
+	"github.com/thatlq1812/service-3-gateway/internal/middleware"
 
 	articlepb "github.com/thatlq1812/service-2-article/proto"
 
@@ -37,11 +39,11 @@ func connectWithRetry(address string, serviceName string, maxRetries int) (*grpc
 		cancel()
 
 		if err == nil {
-			log.Printf("[%s] ✓ Successfully connected to %s", serviceName, address)
+			log.Printf("[%s] Successfully connected to %s", serviceName, address)
 			return conn, nil
 		}
 
-		log.Printf("[%s] ✗ Connection attempt %d failed: %v", serviceName, i+1, err)
+		log.Printf("[%s] Connection attempt %d failed: %v", serviceName, i+1, err)
 
 		if i < maxRetries-1 {
 			log.Printf("[%s] Retrying in %v...", serviceName, backoff)
@@ -88,9 +90,19 @@ func main() {
 	articleClient := articlepb.NewArticleServiceClient(articleConn)
 	log.Printf("✓ Connected to Article Service")
 
-	// Initialize handlers
-	userHandler := handler.NewUserHandler(userClient)
-	articleHandler := handler.NewArticleHandler(articleClient)
+	// Initialize circuit breakers for each service
+	// maxFailures: 5 consecutive failures trigger circuit open
+	// resetTimeout: 30s before attempting half-open state
+	userCircuit := circuit.NewBreaker(5, 30*time.Second)
+	articleCircuit := circuit.NewBreaker(5, 30*time.Second)
+
+	log.Printf("Circuit Breakers initialized")
+	log.Printf("- User Service: max_failures=5, reset_timeout=30s")
+	log.Printf("- Article Service: max_failures=5, reset_timeout=30s")
+
+	// Initialize handlers with circuit breakers
+	userHandler := handler.NewUserHandlerWithCircuit(userClient, userCircuit)
+	articleHandler := handler.NewArticleHandlerWithCircuit(articleClient, articleCircuit)
 
 	// Create HTTP Router (receive REST request)
 	router := mux.NewRouter()
@@ -98,6 +110,9 @@ func main() {
 	// Define REST endpoints
 	router.HandleFunc("/users", userHandler.CreateUser).Methods("POST")
 	router.HandleFunc("/articles", articleHandler.CreateArticle).Methods("POST")
+
+	// Add global timeout middleware (5 seconds per request)
+	router.Use(middleware.TimeoutMiddleware(5 * time.Second))
 
 	// Add logging middleware
 	router.Use(loggingMiddleware)
@@ -131,25 +146,25 @@ func main() {
 	// Health check with backend service status
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		// Check User Service connection
 		userState := userConn.GetState().String()
 		userHealthy := userState == "READY"
-		
+
 		// Check Article Service connection
 		articleState := articleConn.GetState().String()
 		articleHealthy := articleState == "READY"
-		
+
 		// Overall health
 		overallHealthy := userHealthy && articleHealthy
 		statusCode := http.StatusOK
 		status := "healthy"
-		
+
 		if !overallHealthy {
 			statusCode = http.StatusServiceUnavailable
 			status = "degraded"
 		}
-		
+
 		response := fmt.Sprintf(`{
 	"status": "%s",
 	"services": {
@@ -163,7 +178,7 @@ func main() {
 		}
 	}
 }`, status, userState, userHealthy, articleState, articleHealthy)
-		
+
 		w.WriteHeader(statusCode)
 		w.Write([]byte(response))
 	}).Methods("GET")
