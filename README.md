@@ -1,42 +1,271 @@
-# API Gateway
+# Service 3: API Gateway
 
-HTTP REST gateway for gRPC microservices.
+> HTTP REST API Gateway translating to gRPC backend services
 
-**Port:** `8080` | **Protocol:** HTTP/REST
-
-## Quick Start
-
-```bash
-# Run (User Service and Article Service must be running first!)
-cp .env.example .env  # Edit with your config
-go run cmd/server/main.go
-```
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `USER_SERVICE_ADDR` | localhost:50051 | User Service gRPC address |
-| `ARTICLE_SERVICE_ADDR` | localhost:50052 | Article Service gRPC address |
-| `GATEWAY_PORT` | 8080 | HTTP server port |
+**Protocol:** HTTP REST  
+**Port:** 8080  
+**Backend:** gRPC clients to User & Article Services
 
 ---
 
-# API Reference
+## Table of Contents
 
-## User APIs
+- [Overview](#overview)
+- [Setup Options](#setup-options)
+  - [Option 1: Docker](#option-1-docker-recommended)
+  - [Option 2: Terminal (Local)](#option-2-terminal-local-development)
+- [Environment Configuration](#environment-configuration)
+- [API Reference](#api-reference)
+- [Response Format](#response-format)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
 
-### 1. Create User
+---
 
-`POST /api/v1/users`
+## Overview
+
+API Gateway provides HTTP REST interface for external clients, translating requests to gRPC calls to backend services.
+
+**Features:**
+- HTTP REST to gRPC translation
+- Standardized JSON responses
+- JWT authentication middleware
+- Error code mapping (gRPC → REST)
+- CORS support
+- Request/response logging
+
+**Technology Stack:**
+- **Language:** Go 1.21+
+- **Protocol:** HTTP REST (external) → gRPC (internal)
+- **Router:** gorilla/mux
+- **Integration:** User Service + Article Service gRPC clients
+
+---
+
+## Setup Options
+
+### Option 1: Docker (Recommended)
+
+**Prerequisites:**
+- Docker 20.10+
+- Docker Compose 1.29+
+
+**Quick Start:**
+```bash
+# From project root
+cd agrios
+
+# Start all services (includes Gateway)
+docker-compose up -d
+
+# Wait for services
+sleep 15
+
+# Verify gateway
+curl http://localhost:8080/health
+# Expected: {"status":"ok"}
+```
+
+**Gateway Docker Details:**
+```yaml
+# From docker-compose.yml
+gateway:
+  build: ./service-3-gateway
+  ports:
+    - "8080:8080"
+  depends_on:
+    - user-service
+    - article-service
+  environment:
+    - USER_SERVICE_HOST=user-service
+    - ARTICLE_SERVICE_HOST=article-service
+```
+
+**Rebuild after code changes:**
+```bash
+docker-compose up -d --build gateway
+```
+
+---
+
+### Option 2: Terminal (Local Development)
+
+**Prerequisites:**
+- Go 1.21+
+- User Service running (port 50051)
+- Article Service running (port 50052)
+
+#### Step 1: Install Dependencies
 
 ```bash
+cd service-3-gateway
+
+# Download Go dependencies
+go mod download
+
+# Verify dependencies
+go mod verify
+```
+
+#### Step 2: Start Backend Services
+
+```bash
+# Gateway requires both backend services to be running
+
+# Option A: Start with Docker
+docker-compose up -d user-service article-service
+
+# Option B: Start manually in separate terminals
+# Terminal 1: User Service
+cd ../service-1-user
+go run cmd/server/main.go
+
+# Terminal 2: Article Service
+cd ../service-2-article
+go run cmd/server/main.go
+```
+
+#### Step 3: Configure Environment
+
+```bash
+# Copy example
+cp .env.example .env
+
+# Edit configuration
+nano .env
+```
+
+**Required settings for local development:**
+```env
+# Backend Services
+USER_SERVICE_HOST=localhost
+USER_SERVICE_PORT=50051
+
+ARTICLE_SERVICE_HOST=localhost
+ARTICLE_SERVICE_PORT=50052
+
+# Server
+HTTP_PORT=8080
+
+# CORS (for frontend development)
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS
+CORS_ALLOWED_HEADERS=Content-Type,Authorization
+```
+
+#### Step 4: Build and Run
+
+```bash
+# Build
+go build -o bin/gateway ./cmd/server
+
+# Run
+./bin/gateway
+
+# Or run directly
+go run cmd/server/main.go
+```
+
+**Expected output:**
+```
+2025/12/05 10:00:00 Connected to User Service at localhost:50051
+2025/12/05 10:00:00 Connected to Article Service at localhost:50052
+2025/12/05 10:00:00 API Gateway listening on :8080
+```
+
+#### Step 5: Verify Gateway
+
+```bash
+# Check health endpoint
+curl http://localhost:8080/health
+
+# Expected: {"status":"ok"}
+
+# Test user registration
+curl -X POST http://localhost:8080/api/v1/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test User","email":"test@example.com","password":"pass123"}'
+```
+
+---
+
+## Environment Configuration
+
+### Complete Environment Variables
+
+```env
+# Backend Services Configuration
+USER_SERVICE_HOST=localhost         # User Service host (use 'user-service' for Docker)
+USER_SERVICE_PORT=50051             # User Service port
+
+ARTICLE_SERVICE_HOST=localhost      # Article Service host (use 'article-service' for Docker)
+ARTICLE_SERVICE_PORT=50052          # Article Service port
+
+# Gateway Server Configuration
+HTTP_PORT=8080                      # HTTP server port
+
+# CORS Configuration (for frontend apps)
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS
+CORS_ALLOWED_HEADERS=Content-Type,Authorization,X-Requested-With
+CORS_ALLOW_CREDENTIALS=true
+
+# Logging
+LOG_LEVEL=info                      # debug, info, warn, error
+LOG_FORMAT=json                     # json or text
+```
+
+### CORS Configuration
+
+Enable CORS for frontend applications:
+
+```env
+# Development (allow all)
+CORS_ALLOWED_ORIGINS=*
+
+# Production (specific origins)
+CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+```
+
+---
+
+## API Reference
+
+### Base URL
+```
+http://localhost:8080/api/v1
+```
+
+### Health Check
+
+```bash
+GET /health
+
+curl http://localhost:8080/health
+```
+
+**Response:**
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+### Authentication Endpoints
+
+#### 1. Register User
+```bash
+POST /api/v1/users
+Content-Type: application/json
+
 curl -X POST http://localhost:8080/api/v1/users \
   -H "Content-Type: application/json" \
   -d '{
     "name": "John Doe",
     "email": "john@example.com",
-    "password": "secret123"
+    "password": "securepass123"
   }'
 ```
 
@@ -46,22 +275,101 @@ curl -X POST http://localhost:8080/api/v1/users \
   "code": "000",
   "message": "success",
   "data": {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "created_at": "2025-01-01T00:00:00Z",
-    "updated_at": "2025-01-01T00:00:00Z"
+    "user": {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "created_at": "2025-12-05T10:00:00Z"
+    }
   }
 }
 ```
 
 ---
 
-### 2. Get User
-
-`GET /api/v1/users/{id}`
-
+#### 2. Login
 ```bash
+POST /api/v1/auth/login
+Content-Type: application/json
+
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "securepass123"
+  }'
+```
+
+**Response:**
+```json
+{
+  "code": "000",
+  "message": "Login successful",
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+**Save tokens for subsequent requests:**
+```bash
+# Save to variable
+export ACCESS_TOKEN="<your_access_token>"
+export REFRESH_TOKEN="<your_refresh_token>"
+```
+
+---
+
+#### 3. Refresh Token
+```bash
+POST /api/v1/auth/refresh
+Content-Type: application/json
+
+curl -X POST http://localhost:8080/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}"
+```
+
+**Response:**
+```json
+{
+  "code": "000",
+  "message": "success",
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+---
+
+#### 4. Logout
+```bash
+POST /api/v1/auth/logout
+Authorization: Bearer <access_token>
+
+curl -X POST http://localhost:8080/api/v1/auth/logout \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**Response:**
+```json
+{
+  "code": "000",
+  "message": "Logout successful"
+}
+```
+
+---
+
+### User Management Endpoints
+
+#### 5. Get User
+```bash
+GET /api/v1/users/{id}
+
 curl http://localhost:8080/api/v1/users/1
 ```
 
@@ -71,70 +379,75 @@ curl http://localhost:8080/api/v1/users/1
   "code": "000",
   "message": "success",
   "data": {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "created_at": "2025-01-01T00:00:00Z",
-    "updated_at": "2025-01-01T00:00:00Z"
+    "user": {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "created_at": "2025-12-05T10:00:00Z",
+      "updated_at": "2025-12-05T10:00:00Z"
+    }
   }
 }
 ```
 
 ---
 
-### 3. Update User
-
-`PUT /api/v1/users/{id}`
-
+#### 6. Update User
 ```bash
+PUT /api/v1/users/{id}
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
 curl -X PUT http://localhost:8080/api/v1/users/1 \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "John Updated"}'
+  -d '{
+    "name": "John Smith",
+    "email": "johnsmith@example.com"
+  }'
 ```
 
 **Response:**
 ```json
 {
   "code": "000",
-  "message": "success",
+  "message": "User updated successfully",
   "data": {
-    "id": 1,
-    "name": "John Updated",
-    "email": "john@example.com",
-    "created_at": "2025-01-01T00:00:00Z",
-    "updated_at": "2025-01-01T12:00:00Z"
+    "user": {
+      "id": 1,
+      "name": "John Smith",
+      "email": "johnsmith@example.com",
+      "updated_at": "2025-12-05T11:00:00Z"
+    }
   }
 }
 ```
 
 ---
 
-### 4. Delete User
-
-`DELETE /api/v1/users/{id}`
-
+#### 7. Delete User
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/users/1
+DELETE /api/v1/users/{id}
+Authorization: Bearer <access_token>
+
+curl -X DELETE http://localhost:8080/api/v1/users/1 \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 **Response:**
 ```json
 {
   "code": "000",
-  "message": "success",
-  "data": {
-    "success": true
-  }
+  "message": "User deleted successfully"
 }
 ```
 
 ---
 
-### 5. List Users
-
-`GET /api/v1/users?page=1&page_size=10`
-
+#### 8. List Users
 ```bash
+GET /api/v1/users?page=1&page_size=10
+
 curl "http://localhost:8080/api/v1/users?page=1&page_size=10"
 ```
 
@@ -145,46 +458,18 @@ curl "http://localhost:8080/api/v1/users?page=1&page_size=10"
   "message": "success",
   "data": {
     "users": [
-      {"id": 1, "name": "John Doe", "email": "john@example.com"},
-      {"id": 2, "name": "Jane Smith", "email": "jane@example.com"}
+      {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "created_at": "2025-12-05T10:00:00Z"
+      }
     ],
-    "total": 25,
-    "page": 1,
-    "size": 10,
-    "has_more": true
-  }
-}
-```
-
----
-
-## Auth APIs
-
-### 6. Login
-
-`POST /api/v1/auth/login`
-
-```bash
-curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "john@example.com",
-    "password": "secret123"
-  }'
-```
-
-**Response:**
-```json
-{
-  "code": "000",
-  "message": "success",
-  "data": {
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "user": {
-      "id": 1,
-      "name": "John Doe",
-      "email": "john@example.com"
+    "pagination": {
+      "page": 1,
+      "page_size": 10,
+      "total_count": 25,
+      "total_pages": 3
     }
   }
 }
@@ -192,46 +477,20 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 
 ---
 
-### 7. Logout
+### Article Management Endpoints
 
-`POST /api/v1/auth/logout`
-
-**Requires:** `Authorization: Bearer <token>`
-
+#### 9. Create Article
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/logout \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-```
+POST /api/v1/articles
+Authorization: Bearer <access_token>
+Content-Type: application/json
 
-**Response:**
-```json
-{
-  "code": "000",
-  "message": "success",
-  "data": {
-    "success": true
-  }
-}
-```
-
----
-
-## Article APIs
-
-### 8. Create Article
-
-`POST /api/v1/articles`
-
-**Requires:** `Authorization: Bearer <token>`
-
-```bash
 curl -X POST http://localhost:8080/api/v1/articles \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
   -d '{
-    "title": "My Article",
-    "content": "Article content here...",
-    "user_id": 1
+    "title": "Introduction to Microservices",
+    "content": "Microservices architecture is a design pattern..."
   }'
 ```
 
@@ -241,23 +500,27 @@ curl -X POST http://localhost:8080/api/v1/articles \
   "code": "000",
   "message": "success",
   "data": {
-    "id": 1,
-    "title": "My Article",
-    "content": "Article content here...",
-    "user_id": 1,
-    "created_at": "2025-01-01T00:00:00Z",
-    "updated_at": "2025-01-01T00:00:00Z"
+    "article": {
+      "id": 1,
+      "title": "Introduction to Microservices",
+      "content": "Microservices architecture is...",
+      "author": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "created_at": "2025-12-05T10:00:00Z"
+    }
   }
 }
 ```
 
 ---
 
-### 9. Get Article
-
-`GET /api/v1/articles/{id}`
-
+#### 10. Get Article
 ```bash
+GET /api/v1/articles/{id}
+
 curl http://localhost:8080/api/v1/articles/1
 ```
 
@@ -267,16 +530,17 @@ curl http://localhost:8080/api/v1/articles/1
   "code": "000",
   "message": "success",
   "data": {
-    "id": 1,
-    "title": "My Article",
-    "content": "Article content here...",
-    "user_id": 1,
-    "created_at": "2025-01-01T00:00:00Z",
-    "updated_at": "2025-01-01T00:00:00Z",
-    "user": {
+    "article": {
       "id": 1,
-      "name": "John Doe",
-      "email": "john@example.com"
+      "title": "Introduction to Microservices",
+      "content": "Microservices architecture is...",
+      "author": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "created_at": "2025-12-05T10:00:00Z",
+      "updated_at": "2025-12-05T10:00:00Z"
     }
   }
 }
@@ -284,15 +548,17 @@ curl http://localhost:8080/api/v1/articles/1
 
 ---
 
-### 10. Update Article
-
-`PUT /api/v1/articles/{id}`
-
+#### 11. Update Article
 ```bash
+PUT /api/v1/articles/{id}
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
 curl -X PUT http://localhost:8080/api/v1/articles/1 \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Updated Title",
+    "title": "Advanced Microservices Patterns",
     "content": "Updated content..."
   }'
 ```
@@ -301,52 +567,55 @@ curl -X PUT http://localhost:8080/api/v1/articles/1 \
 ```json
 {
   "code": "000",
-  "message": "success",
+  "message": "Article updated successfully",
   "data": {
-    "id": 1,
-    "title": "Updated Title",
-    "content": "Updated content...",
-    "user_id": 1,
-    "created_at": "2025-01-01T00:00:00Z",
-    "updated_at": "2025-01-01T12:00:00Z"
+    "article": {
+      "id": 1,
+      "title": "Advanced Microservices Patterns",
+      "content": "Updated content...",
+      "author": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "updated_at": "2025-12-05T11:00:00Z"
+    }
   }
 }
 ```
 
 ---
 
-### 11. Delete Article
-
-`DELETE /api/v1/articles/{id}`
-
+#### 12. Delete Article
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/articles/1
+DELETE /api/v1/articles/{id}
+Authorization: Bearer <access_token>
+
+curl -X DELETE http://localhost:8080/api/v1/articles/1 \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 **Response:**
 ```json
 {
   "code": "000",
-  "message": "success",
-  "data": {
-    "success": true
-  }
+  "message": "Article deleted successfully"
 }
 ```
 
 ---
 
-### 12. List Articles
-
-`GET /api/v1/articles?page=1&page_size=10&user_id=1`
-
+#### 13. List Articles
 ```bash
-# All articles
-curl "http://localhost:8080/api/v1/articles?page=1&page_size=10"
+GET /api/v1/articles?page=1&page_size=10&user_id=1
 
-# Filter by author
-curl "http://localhost:8080/api/v1/articles?user_id=1"
+curl "http://localhost:8080/api/v1/articles?page=1&page_size=10&user_id=1"
 ```
+
+**Query Parameters:**
+- `page` (default: 1)
+- `page_size` (default: 10)
+- `user_id` (optional) - Filter by author
 
 **Response:**
 ```json
@@ -357,65 +626,371 @@ curl "http://localhost:8080/api/v1/articles?user_id=1"
     "articles": [
       {
         "id": 1,
-        "title": "Article 1",
-        "content": "...",
-        "user_id": 1,
-        "user": {
+        "title": "Introduction to Microservices",
+        "content": "Microservices architecture is...",
+        "author": {
           "id": 1,
           "name": "John Doe",
           "email": "john@example.com"
-        }
+        },
+        "created_at": "2025-12-05T10:00:00Z"
       }
     ],
-    "total": 25,
-    "page": 1,
-    "total_pages": 3
+    "pagination": {
+      "page": 1,
+      "page_size": 10,
+      "total": 50
+    }
   }
 }
 ```
 
 ---
 
-## Error Codes
+## Response Format
 
-| Code | HTTP | Description |
-|------|------|-------------|
-| `000` | 200 | Success |
-| `001` | 409 | Already exists |
-| `003` | 400 | Invalid argument |
-| `005` | 404 | Not found |
-| `016` | 401 | Unauthenticated |
-| `013` | 500 | Internal error |
+### Success Response
 
-**Error Response:**
 ```json
 {
-  "code": "005",
-  "message": "user not found"
+  "code": "000",
+  "message": "success",
+  "data": {
+    // Response data here
+  }
 }
+```
+
+### Error Response
+
+```json
+{
+  "code": "001",
+  "message": "Invalid email format"
+}
+```
+
+### Error Codes
+
+| Code | Meaning | HTTP Status | Example |
+|------|---------|-------------|---------|
+| 000 | Success | 200 | Operation completed |
+| 001 | Invalid argument | 400 | Missing required field |
+| 002 | Not found | 404 | User/Article not found |
+| 003 | Already exists | 409 | Email already registered |
+| 004 | Unauthorized | 401 | Invalid token |
+| 005 | Permission denied | 403 | Cannot modify others' data |
+| 006 | Internal error | 500 | Database connection failed |
+
+---
+
+## Testing
+
+### Complete API Test Script
+
+```bash
+#!/bin/bash
+
+BASE_URL="http://localhost:8080/api/v1"
+
+echo "=== 1. Register User ==="
+curl -X POST $BASE_URL/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test User","email":"test@example.com","password":"pass123"}'
+
+echo -e "\n\n=== 2. Login ==="
+LOGIN_RESP=$(curl -s -X POST $BASE_URL/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"pass123"}')
+
+echo $LOGIN_RESP | jq '.'
+
+# Extract tokens
+ACCESS_TOKEN=$(echo $LOGIN_RESP | jq -r '.data.access_token')
+REFRESH_TOKEN=$(echo $LOGIN_RESP | jq -r '.data.refresh_token')
+
+echo "Access Token: $ACCESS_TOKEN"
+echo "Refresh Token: $REFRESH_TOKEN"
+
+echo -e "\n\n=== 3. Create Article ==="
+curl -X POST $BASE_URL/articles \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Test Article","content":"This is a test article content."}'
+
+echo -e "\n\n=== 4. Get Article ==="
+curl $BASE_URL/articles/1
+
+echo -e "\n\n=== 5. List Articles ==="
+curl "$BASE_URL/articles?page=1&page_size=10"
+
+echo -e "\n\n=== 6. Update Article ==="
+curl -X PUT $BASE_URL/articles/1 \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Updated Title","content":"Updated content"}'
+
+echo -e "\n\n=== 7. Refresh Token ==="
+curl -X POST $BASE_URL/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}"
+
+echo -e "\n\n=== 8. Logout ==="
+curl -X POST $BASE_URL/auth/logout \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+echo -e "\n\n=== 9. Verify Token Invalid ==="
+curl $BASE_URL/users/1 \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Save as `test-gateway.sh` and run:
+```bash
+chmod +x test-gateway.sh
+./test-gateway.sh
 ```
 
 ---
 
-## Quick Test Flow
+## Troubleshooting
+
+### Gateway Won't Start
+
+**Problem:** Service fails to start
+
+**Check logs:**
+```bash
+# Docker
+docker-compose logs -f gateway
+
+# Local
+# Check terminal output
+```
+
+**Common causes:**
+1. Backend services not running
+2. Port 8080 already in use
+3. Missing environment variables
+
+**Solutions:**
+```bash
+# Check backend services
+docker-compose ps user-service article-service
+
+# Start backend services
+docker-compose up -d user-service article-service
+
+# Check port
+netstat -ano | findstr :8080  # Windows
+lsof -i :8080                  # Linux/Mac
+
+# Verify .env configuration
+cat .env
+```
+
+---
+
+### Cannot Connect to Backend Services
+
+**Problem:** `failed to connect to user service` or `failed to connect to article service`
+
+**Solutions:**
+```bash
+# 1. Check backend services are running
+docker-compose ps user-service article-service
+
+# 2. Test backend services directly
+grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext localhost:50052 list
+
+# 3. Verify HOST configuration
+cat .env | grep SERVICE_HOST
+
+# 4. Check Docker network (if using Docker)
+docker network inspect agrios_default
+
+# 5. Restart gateway after backend is ready
+docker-compose restart gateway
+```
+
+---
+
+### CORS Errors
+
+**Problem:** Browser shows CORS errors
+
+**Solutions:**
+```bash
+# 1. Add frontend origin to .env
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+
+# 2. Restart gateway
+docker-compose restart gateway
+
+# 3. Verify CORS headers in response
+curl -I http://localhost:8080/api/v1/users \
+  -H "Origin: http://localhost:3000"
+
+# Should see:
+# Access-Control-Allow-Origin: http://localhost:3000
+```
+
+---
+
+### 401 Unauthorized
+
+**Problem:** API returns 401 even with token
+
+**Possible causes:**
+1. Token expired (access token: 15 minutes)
+2. Token blacklisted (after logout)
+3. Invalid token format
+4. Missing Authorization header
+
+**Solutions:**
+```bash
+# 1. Check token format
+# Must be: Authorization: Bearer <token>
+
+# 2. Use refresh token
+curl -X POST http://localhost:8080/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}"
+
+# 3. Login again
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"pass123"}'
+
+# 4. Verify token is valid
+# (Check User Service directly via grpcurl)
+```
+
+---
+
+### 404 Not Found
+
+**Problem:** Endpoint returns 404
+
+**Solutions:**
+```bash
+# 1. Check endpoint path
+# Correct: /api/v1/users
+# Wrong: /users or /api/users
+
+# 2. List available routes
+curl http://localhost:8080/
+
+# 3. Check method (GET/POST/PUT/DELETE)
+```
+
+---
+
+## Project Structure
+
+```
+service-3-gateway/
+├── cmd/
+│   └── server/
+│       └── main.go              # Entry point
+├── internal/
+│   ├── client/
+│   │   ├── user_client.go       # User Service gRPC client
+│   │   └── article_client.go    # Article Service gRPC client
+│   ├── handler/
+│   │   ├── user_handler.go      # User endpoints
+│   │   ├── article_handler.go   # Article endpoints
+│   │   └── health_handler.go    # Health check
+│   ├── middleware/
+│   │   ├── auth_middleware.go   # JWT authentication
+│   │   ├── cors_middleware.go   # CORS headers
+│   │   └── logging_middleware.go # Request logging
+│   ├── response/
+│   │   └── response.go          # Response formatting
+│   └── config/
+│       └── config.go            # Configuration
+├── .env.example                 # Environment template
+├── Dockerfile                   # Docker configuration
+├── go.mod                       # Go dependencies
+└── README.md                    # This file
+```
+
+---
+
+## Development Commands
 
 ```bash
-# 1. Create user
-curl -X POST http://localhost:8080/api/v1/users \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Test","email":"test@example.com","password":"pass123"}'
+# Install dependencies
+go mod download
 
-# 2. Login (save token)
-TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"pass123"}' | jq -r '.data.access_token')
+# Update dependencies
+go mod tidy
 
-# 3. Create article with token
-curl -X POST http://localhost:8080/api/v1/articles \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"title":"My Article","content":"Hello!","user_id":1}'
+# Build
+go build -o bin/gateway ./cmd/server
 
-# 4. Get article
-curl http://localhost:8080/api/v1/articles/1
+# Run
+./bin/gateway
+
+# Run with hot reload (requires air)
+go install github.com/cosmtrek/air@latest
+air
+
+# Format code
+go fmt ./...
+
+# Lint code (requires golangci-lint)
+golangci-lint run
+
+# Run tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
 ```
+
+---
+
+## Middleware
+
+### Authentication Middleware
+
+Protects endpoints requiring authentication:
+
+```go
+// internal/middleware/auth_middleware.go
+func AuthMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Extract token from Authorization header
+        authHeader := r.Header.Get("Authorization")
+        
+        // Validate token with User Service
+        // If valid, add user_id to request context
+        
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+**Protected endpoints:**
+- POST /api/v1/articles
+- PUT /api/v1/articles/{id}
+- DELETE /api/v1/articles/{id}
+- PUT /api/v1/users/{id}
+- DELETE /api/v1/users/{id}
+- POST /api/v1/auth/logout
+
+---
+
+## Additional Resources
+
+- **[Main Project README](../README.md)** - Complete platform documentation
+- **[Deployment Guide](../DEPLOYMENT.md)** - Production deployment steps
+- **[User Service](../service-1-user/README.md)** - Authentication & JWT documentation
+- **[Article Service](../service-2-article/README.md)** - Content management & graceful degradation
+
+---
+
+**Service Version:** 1.0.0  
+**Last Updated:** December 5, 2025  
+**Maintainer:** thatlq1812@gmail.com

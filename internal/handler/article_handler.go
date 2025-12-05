@@ -137,7 +137,7 @@ func (h *ArticleHandler) GetArticle(w http.ResponseWriter, r *http.Request) {
 		"updated_at": resp.Data.Article.Article.UpdatedAt,
 	}
 
-	// Include user info if available
+	// Include user info if available (null if User Service unavailable)
 	if resp.Data.Article.User != nil {
 		articleData["user"] = map[string]interface{}{
 			"id":         resp.Data.Article.User.Id,
@@ -146,6 +146,8 @@ func (h *ArticleHandler) GetArticle(w http.ResponseWriter, r *http.Request) {
 			"created_at": resp.Data.Article.User.CreatedAt,
 			"updated_at": resp.Data.Article.User.UpdatedAt,
 		}
+	} else {
+		articleData["user"] = nil // Explicitly set null for graceful degradation
 	}
 
 	response.Success(w, articleData)

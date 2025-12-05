@@ -84,6 +84,7 @@ func main() {
 
 	// Auth routes
 	api.HandleFunc("/auth/login", userHandler.Login).Methods("POST")
+	api.HandleFunc("/auth/refresh", userHandler.RefreshToken).Methods("POST")
 	api.HandleFunc("/auth/validate", userHandler.ValidateToken).Methods("POST")
 	api.HandleFunc("/auth/logout", userHandler.Logout).Methods("POST")
 

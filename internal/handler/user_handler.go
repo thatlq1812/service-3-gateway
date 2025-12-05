@@ -120,12 +120,21 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.userClient.UpdateUser(context.Background(), &userpb.UpdateUserRequest{
-		Id:       int32(id),
-		Name:     req.Name,
-		Email:    req.Email,
-		Password: req.Password,
-	})
+	// Build gRPC request with optional fields
+	grpcReq := &userpb.UpdateUserRequest{
+		Id: int32(id),
+	}
+	if req.Name != "" {
+		grpcReq.Name = &req.Name
+	}
+	if req.Email != "" {
+		grpcReq.Email = &req.Email
+	}
+	if req.Password != "" {
+		grpcReq.Password = &req.Password
+	}
+
+	resp, err := h.userClient.UpdateUser(context.Background(), grpcReq)
 
 	if err != nil {
 		response.Error(w, err)
@@ -248,11 +257,6 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, map[string]interface{}{
 		"access_token":  resp.Data.AccessToken,
 		"refresh_token": resp.Data.RefreshToken,
-		"user": map[string]interface{}{
-			"id":    resp.Data.User.Id,
-			"name":  resp.Data.User.Name,
-			"email": resp.Data.User.Email,
-		},
 	})
 }
 
@@ -290,12 +294,47 @@ func (h *UserHandler) ValidateToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RefreshTokenRequest HTTP request body
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// POST /api/v1/auth/refresh
+func (h *UserHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	var req RefreshTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, "invalid request body")
+		return
+	}
+
+	resp, err := h.userClient.RefreshToken(context.Background(), &userpb.RefreshTokenRequest{
+		RefreshToken: req.RefreshToken,
+	})
+
+	if err != nil {
+		response.Error(w, err)
+		return
+	}
+
+	if resp.Code != "000" {
+		response.CustomError(w, resp.Code, resp.Message)
+		return
+	}
+
+	response.Success(w, map[string]interface{}{
+		"access_token":  resp.Data.AccessToken,
+		"refresh_token": resp.Data.RefreshToken,
+	})
+}
+
 // LogoutRequest HTTP request body
 type LogoutRequest struct {
-	Token string `json:"token"`
+	Token        string `json:"token"`         // Access token (required)
+	RefreshToken string `json:"refresh_token"` // Refresh token (optional but recommended)
 }
 
 // POST /api/v1/auth/logout
+// Blacklists both access and refresh tokens for complete logout
 func (h *UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	var req LogoutRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -304,7 +343,8 @@ func (h *UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.userClient.Logout(context.Background(), &userpb.LogoutRequest{
-		Token: req.Token,
+		Token:        req.Token,
+		RefreshToken: req.RefreshToken,
 	})
 
 	if err != nil {

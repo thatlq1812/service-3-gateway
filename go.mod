@@ -2,9 +2,9 @@ module service-3-gateway
 
 go 1.25.4
 
-replace service-1-user => ../service-1-user
+replace github.com/thatlq1812/service-1-user => ../service-1-user
 
-replace service-2-article => ../service-2-article
+replace github.com/thatlq1812/service-2-article => ../service-2-article
 
 replace agrios => ..
 
